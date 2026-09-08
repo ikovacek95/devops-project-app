@@ -1,0 +1,138 @@
+# =============================================================================
+# NetworkPolicy - mikrosegmentacija prometa unutar namespacea `ticketing`
+#
+# Model: DEFAULT DENY na ulazni (ingress) promet + eksplicitne bijele liste.
+#
+#   traefik (kube-system)  ->  frontend:3000
+#   traefik (kube-system)  ->  api:8080
+#   frontend               ->  api:8080
+#   api, worker            ->  postgres:5432
+#   api, worker            ->  redis:6379
+#
+# Egress se namjerno NE ograničava kako DNS (CoreDNS) i povlačenje slika ostanu
+# funkcionalni bez dodatnih pravila - segmentacija se postiže na ulaznoj strani.
+#
+# VAŽNO: k3s po defaultu ima ugrađen NetworkPolicy controller (kube-router).
+# Ako je k3s pokrenut s `--disable-network-policy`, ova pravila NEĆE imati efekta.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/part-of: ticketing
+spec:
+  # Prazan podSelector = odnosi se na SVE podove u namespaceu.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  # Bez `ingress` pravila => sav ulazni promet je zabranjen.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-from-api-worker
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/part-of: ticketing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: ticketing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+              app.kubernetes.io/instance: ticketing
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: worker
+              app.kubernetes.io/instance: ticketing
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-from-api-worker
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/part-of: ticketing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: ticketing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+              app.kubernetes.io/instance: ticketing
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: worker
+              app.kubernetes.io/instance: ticketing
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-from-frontend-and-traefik
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/part-of: ticketing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: ticketing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+              app.kubernetes.io/instance: ticketing
+        # Traefik u k3s-u radi u namespaceu kube-system. Oznaku
+        # `kubernetes.io/metadata.name` Kubernetes automatski dodaje svakom namespaceu.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-from-traefik
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/part-of: ticketing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/instance: ticketing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 3000
