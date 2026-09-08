@@ -66,7 +66,13 @@ WORKDIR /app
 # redovito sadrzi HIGH/CRITICAL ranjivosti i rusi Trivy quality gate, iako se
 # u runtimeu nikad ne izvrsava. Uklanjanjem npm-a, npx-a i yarna povrsina
 # napada finalne slike znatno se smanjuje.
-RUN addgroup -S app && adduser -S -u 10001 -G app app \
+# `apk upgrade` povlaci sigurnosne zakrpe OS paketa Alpinea (npr. openssl /
+# libcrypto3 / libssl3). Bez toga finalna slika nasljedjuje CVE-ove bazne
+# slike sve dok Node ne objavi novu. Kompromis: build vise nije bit-for-bit
+# reproducibilan kroz vrijeme, ali zauzvrat ne isporucujemo poznate ranjivosti.
+# Verzija aplikacije i njezinih ovisnosti ostaje pinana (package-lock.json).
+RUN apk --no-cache upgrade \
+    && addgroup -S app && adduser -S -u 10001 -G app app \
     && rm -rf /usr/local/lib/node_modules/npm \
               /usr/local/bin/npm \
               /usr/local/bin/npx \
