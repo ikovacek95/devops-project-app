@@ -29,6 +29,9 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ikovacek95
   NODE_VERSION: "20"
+  # Pinana verzija Trivyja - koristi se sluzbeni Docker image (vidi komentar
+  # uz korak "Trivy config" u jobu lint-containerfiles).
+  TRIVY_VERSION: "0.65.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -132,26 +135,43 @@ jobs:
           dockerfile: worker/Containerfile
           failure-threshold: warning
 
-      # Trivy config = statička analiza Kubernetes manifesta (misconfiguration).
-      # Korak je izvještajni (exit-code 0); nalazi se prate u Security tabu.
+      # Trivy config = staticka analiza Kubernetes manifesta (misconfiguration).
+      #
+      # Trivy se pokrece kroz sluzbeni Docker image s PINANOM verzijom umjesto
+      # preko `aquasecurity/trivy-action`. Ta akcija instalira binary skriptom
+      # `contrib/install.sh` koju dohvaca s `main` grane trivy repozitorija, pa
+      # promjena te skripte rusi pipeline (uoceno u prvom prolazu ovog CI-ja).
+      # Docker image je nepromjenjiv i determinististicki.
+      #
+      # Ovaj korak je izvjestajni (`--exit-code 0`); nalazi se prate u Security tabu.
       - name: Trivy config - skeniranje k8s/ manifesta (tablica)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: config
-          scan-ref: k8s/
-          format: table
-          severity: HIGH,CRITICAL
-          exit-code: "0"
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}:/workspace:ro" \
+            -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            "aquasec/trivy:${TRIVY_VERSION}" \
+            config \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              /workspace/k8s
 
       - name: Trivy config - SARIF izvjestaj
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: config
-          scan-ref: k8s/
-          format: sarif
-          output: trivy-k8s-config.sarif
-          severity: HIGH,CRITICAL
-          exit-code: "0"
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}:/workspace" \
+            -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            "aquasec/trivy:${TRIVY_VERSION}" \
+            config \
+              --format sarif \
+              --output /workspace/trivy-k8s-config.sarif \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              /workspace/k8s
+          # Datoteku je zapisao root iz kontejnera - vrati vlasnistvo runneru
+          # kako bi je upload-sarif akcija mogla procitati.
+          sudo chown "$(id -u):$(id -g)" trivy-k8s-config.sarif
 
       - name: Upload IaC nalaza u GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
@@ -202,15 +222,24 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Trivy - SARIF izvjestaj o ranjivostima slike
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/ticketing-${{ matrix.service }}:${{ github.sha }}
-          format: sarif
-          output: trivy-${{ matrix.service }}.sarif
-          ignore-unfixed: true
-          severity: HIGH,CRITICAL
-          exit-code: "0"
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/ticketing-${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${PWD}:/workspace" \
+            -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            "aquasec/trivy:${TRIVY_VERSION}" \
+            image \
+              --scanners vuln \
+              --format sarif \
+              --output "/workspace/trivy-${{ matrix.service }}.sarif" \
+              --ignore-unfixed \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              "${IMAGE}:${GITHUB_SHA}"
+          sudo chown "$(id -u):$(id -g)" "trivy-${{ matrix.service }}.sarif"
 
       - name: Upload nalaza u GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
@@ -221,17 +250,24 @@ jobs:
           category: trivy-image-${{ matrix.service }}
 
       # QUALITY GATE: pipeline pada ako postoji ijedna HIGH/CRITICAL ranjivost
-      # za koju POSTOJI ispravak (ignore-unfixed: true). Slika se tada NE objavljuje.
+      # za koju POSTOJI ispravak (--ignore-unfixed). Slika se tada NE objavljuje.
       - name: "Trivy QUALITY GATE (HIGH,CRITICAL -> pipeline pada)"
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/ticketing-${{ matrix.service }}:${{ github.sha }}
-          format: table
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/ticketing-${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            "aquasec/trivy:${TRIVY_VERSION}" \
+            image \
+              --scanners vuln \
+              --format table \
+              --ignore-unfixed \
+              --pkg-types os,library \
+              --severity HIGH,CRITICAL \
+              --exit-code 1 \
+              "${IMAGE}:${GITHUB_SHA}"
 
       # Objava se radi TEK nakon uspjesnog gatea i samo s grane main.
       - name: Push slike u GHCR (git-sha + latest)
