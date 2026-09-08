@@ -152,7 +152,7 @@ curl -s http://ticketing.local/api/readyz | jq .
 | Job | Sadržaj |
 |-----|---------|
 | `test` | Matrica `[api, frontend, worker]`: `npm ci`, `node --check src/*.js`, `npm audit --audit-level=high` |
-| `secrets-scan` | `gitleaks` nad **cijelom git poviješću** (`fetch-depth: 0`) |
+| `secrets-scan` | `gitleaks` nad **poviješću commitova**, ne samo radnim stablom (`fetch-depth: 0`) |
 | `lint-containerfiles` | `hadolint` na sva tri Containerfilea + `trivy config k8s/` (SARIF u Security tab) |
 | `build-scan-push` | Build slike → **Trivy quality gate** (`HIGH,CRITICAL`, `ignore-unfixed`, `exit-code: 1`) → push u GHCR s tagovima `<git-sha>` i `latest` (samo `main`) |
 

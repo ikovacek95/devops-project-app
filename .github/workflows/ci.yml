@@ -89,13 +89,20 @@ jobs:
       - name: Checkout koda (puna povijest)
         uses: actions/checkout@v4
         with:
-          # gitleaks skenira cijelu git povijest, ne samo zadnji commit.
+          # Puna povijest je nuzna: gitleaks skenira raspon commitova
+          # (`<base>^..<head>`), a ne samo sadrzaj radnog stabla.
           fetch-depth: 0
 
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Koristi .gitleaks.toml iz korijena repozitorija (ugradena pravila
+          # + usko ciljane iznimke za dokumentirane lazne pozitive).
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Bez pisanja PR komentara - workflow namjerno nema `pull-requests: write`
+          # ovlast (princip najmanjih privilegija). Nalazi idu u job summary i artefakt.
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   # ---------------------------------------------------------------------------
   # 3. Linting Containerfile-ova i IaC skeniranje Kubernetes manifesta

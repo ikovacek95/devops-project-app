@@ -196,14 +196,34 @@ Poznata odstupanja koja su **svjesna odluka**, a Trivy ih može prijaviti:
 |---|----------|---------|-------|--------|-------|
 | 1 | `.env.example` | generic-password | `POSTGRES_PASSWORD=change_me_local` | Lažni pozitiv (placeholder) | Nema stvarne vrijednosti; `.env` je u `.gitignore` |
 | 2 | `k8s/02-secret.example.yaml` | generic-password | `REPLACE_ME_PRIJE_PRIMJENE` | Lažni pozitiv (placeholder) | Stvarni Secret se kreira s `kubectl create secret` |
-| 3 | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` |
+| 3 | `docs/security/image-scan-report.md` | `generic-api-key` | 40-znakovni git SHA u primjeru `ghcr.io/…/ticketing-api:<sha>` (entropija 3.96) | **Lažni pozitiv** — javni identifikator commita, nije tajna | Usko ciljan allowlist u `.gitleaks.toml` (regex vezan uz ime slike ovog projekta, bez izuzimanja cijele datoteke) |
+
+### 6.1 Upravljanje lažnim pozitivima
+
+Konfiguracija `.gitleaks.toml` zadržava **sva** ugrađena pravila
+(`[extend] useDefault = true`) i dodaje samo usko ciljanu iznimku:
+
+```toml
+[allowlist]
+regexTarget = "line"
+regexes = [
+  '''ghcr\.io/ikovacek95/ticketing-(api|frontend|worker):[0-9a-f]{7,40}''',
+]
+```
+
+Namjerno se **ne** izuzimaju cijele datoteke ni direktoriji — da netko u istu
+datoteku doda stvarnu tajnu, gitleaks bi je i dalje prijavio. Svaka iznimka mora
+imati zapisano obrazloženje u tablici iznad.
 
 Kontrole koje sprječavaju curenje tajni:
 
 - `.gitignore` isključuje `.env`, `*.pem`, `*.key`, `kubeconfig` i `k8s/02-secret.yaml`
 - `.dockerignore` isključuje `.env` iz build konteksta svake slike
 - U repozitoriju **nema nijedne stvarne lozinke** — samo placeholderi
-- `gitleaks` u CI-ju skenira **cijelu git povijest** (`fetch-depth: 0`)
+- `gitleaks` u CI-ju skenira **povijest commitova**, a ne samo radno stablo
+  (`fetch-depth: 0`). Kod `push` i `pull_request` događaja skenira se raspon
+  commitova koje promjena uvodi (`<base>^..<head>`); ručnim pokretanjem
+  (`workflow_dispatch`) skenira se cijela povijest repozitorija.
 - Tajne se u runtime ubacuju kroz `Secret` / `.env`, nikad kroz `ConfigMap` ni sliku
 
 ---
@@ -242,7 +262,7 @@ Slika se objavljuje u `ghcr.io` **samo ako su ispunjeni SVI uvjeti**:
 
 1. `npm ci` uspješan i `node --check` prolazi za sve `.js` datoteke
 2. `npm audit --audit-level=high` bez HIGH/CRITICAL nalaza
-3. `gitleaks` ne pronalazi tajne u cijeloj git povijesti
+3. `gitleaks` ne pronalazi tajne u rasponu commitova koje promjena uvodi
 4. `hadolint` prolazi na sva tri Containerfilea (prag: `warning`)
 5. **`trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1` prolazi**
 6. Grana je `main` (ne pull request, ne feature grana)
@@ -282,7 +302,7 @@ obrazloženje zašto nije iskoristiv, kompenzacijsku kontrolu i datum ponovne pr
 | Read-only rootfs, bez capabilitiesa, bez eskalacije privilegija | ✅ |
 | Tajne odvojene od koda i slike | ✅ |
 | Skeniranje ovisnosti (`npm audit`, gate HIGH) | ✅ |
-| Skeniranje tajni (`gitleaks`, cijela povijest) | ✅ |
+| Skeniranje tajni (`gitleaks`, povijest commitova) | ✅ |
 | Skeniranje Containerfilea (`hadolint`) | ✅ |
 | Skeniranje slika (`trivy image`, gate HIGH/CRITICAL) | ✅ |
 | Skeniranje IaC-a (`trivy config k8s/`) | ✅ |

@@ -5,12 +5,17 @@
 # provjerom da proces `src/worker.js` i dalje postoji (busybox `pgrep`).
 # =============================================================================
 
-ARG NODE_IMAGE=docker.io/library/node:20.20-alpine3.22
+# Bazna slika je pinana na minor verziju (20.20) i verziju Alpinea (3.22)
+# kako bi build bio reproducibilan (hadolint pravila DL3006 i DL3007).
+#
+# Tag se namjerno ponavlja u svakom stageu umjesto referenciranja preko ARG-a:
+# hadolint ne razrjesava ARG vrijednost pa FROM ${VAR} prijavljuje kao
+# netagiranu sliku (DL3006).
 
 # -----------------------------------------------------------------------------
 # Stage 1: deps - produkcijske ovisnosti
 # -----------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS deps
+FROM docker.io/library/node:20.20-alpine3.22 AS deps
 
 WORKDIR /app
 
@@ -22,7 +27,7 @@ RUN npm ci --omit=dev --ignore-scripts \
 # -----------------------------------------------------------------------------
 # Stage 2: dev - koristi se samo za lokalni razvoj (hot-reload)
 # -----------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS dev
+FROM docker.io/library/node:20.20-alpine3.22 AS dev
 
 ENV NODE_ENV=development \
     NPM_CONFIG_CACHE=/tmp/.npm
@@ -46,7 +51,7 @@ CMD ["npx", "nodemon", "src/worker.js"]
 # -----------------------------------------------------------------------------
 # Stage 3: runtime - finalna produkcijska slika
 # -----------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS runtime
+FROM docker.io/library/node:20.20-alpine3.22 AS runtime
 
 ENV NODE_ENV=production \
     NPM_CONFIG_CACHE=/tmp/.npm
