@@ -6,14 +6,15 @@
 | Repozitorij | `ikovacek95/devops-project-app` |
 | Registry | `ghcr.io/ikovacek95/ticketing-{api,frontend,worker}` |
 | Alati | Trivy (image / fs / config), `npm audit`, hadolint, gitleaks |
-| Datum skeniranja | `<UPISATI>` |
-| Verzija Trivyja | `<UPISATI: trivy --version>` |
+| Datum skeniranja | 2026-09-08 (automatizirano u CI pipelineu) |
+| Verzija Trivyja | `0.65.0` (pinani `aquasec/trivy:0.65.0`) |
+| Bazna slika | `docker.io/library/node:20.20-alpine3.22` (Alpine 3.22.4) |
 | Autor | `<UPISATI>` |
 
-> **Kako koristiti ovaj dokument:** dijelovi označeni s `<UPISATI>` popunjavaju se
-> rezultatima stvarnog skeniranja na CentOS Stream 9 poslužitelju. Poglavlja 1–3 sadrže
-> točne naredbe, poglavlje 4 je već popunjeno rezultatima `npm audit`-a, a poglavlje 7
-> je obvezujuća politika koja vrijedi bez obzira na nalaze.
+> **Kako koristiti ovaj dokument:** poglavlja 2, 3, 4 i 6 popunjena su **stvarnim**
+> rezultatima skeniranja iz CI pipelinea. Polja označena s `<UPISATI>` popunjavaju se
+> nakon ručnog pokretanja na CentOS Stream 9 poslužitelju. Poglavlje 7 je obvezujuća
+> politika koja vrijedi bez obzira na nalaze.
 
 ---
 
@@ -86,19 +87,71 @@ podman run --rm -v "$PWD:/repo:Z" docker.io/zricethezav/gitleaks:latest detect -
 
 Ozbiljnost: 🔴 CRITICAL · 🟠 HIGH · 🟡 MEDIUM · ⚪ LOW
 
-| # | Slika | Komponenta | CVE / GHSA | Ozbiljnost | Instalirana verzija | Ispravljena u | Korektivna mjera | Rezultat ponovnog skeniranja |
-|---|-------|-----------|------------|-----------|--------------------|---------------|------------------|------------------------------|
-| 1 | `ticketing-api` | `<UPISATI>` | `<CVE-...>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` |
-| 2 | `ticketing-frontend` | `<UPISATI>` | `<CVE-...>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` |
-| 3 | `ticketing-worker` | `<UPISATI>` | `<CVE-...>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` |
+Nalazi su prikupljeni **automatski u CI pipelineu** (`trivy image --ignore-unfixed
+--severity HIGH,CRITICAL`). Rezultati su identični za sva tri servisa jer dijele
+istu baznu sliku i isti obrazac Containerfilea.
 
-### 2.1 Sažetak po ozbiljnosti — PRIJE / POSLIJE
+### 2.1 Nalazi u Node.js sloju — npm ugrađen u baznu sliku
 
-| Slika | 🔴 CRITICAL prije | 🔴 CRITICAL poslije | 🟠 HIGH prije | 🟠 HIGH poslije | 🟡 MEDIUM prije | 🟡 MEDIUM poslije | Status gatea |
-|-------|-----------------|--------------------|--------------|----------------|----------------|------------------|--------------|
-| `ticketing-api` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | ✅ / ❌ |
-| `ticketing-frontend` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | ✅ / ❌ |
-| `ticketing-worker` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | `<n>` | ✅ / ❌ |
+| # | Komponenta | CVE | Ozbiljnost | Instalirano | Ispravljeno u | Korektivna mjera | Ponovno skeniranje |
+|---|-----------|-----|-----------|-------------|---------------|------------------|--------------------|
+| 1 | `tar` | CVE-2026-59873 | 🔴 CRITICAL | 6.2.1 | 7.5.19 | Uklonjen npm iz `runtime` stagea | ✅ nema nalaza |
+| 2 | `tar` | CVE-2026-23745 | 🟠 HIGH | 6.2.1 | 7.5.3 | Isto | ✅ nema nalaza |
+| 3 | `tar` | CVE-2026-23950 | 🟠 HIGH | 6.2.1 | 7.5.4 | Isto | ✅ nema nalaza |
+| 4 | `tar` | CVE-2026-24842 | 🟠 HIGH | 6.2.1 | 7.5.7 | Isto | ✅ nema nalaza |
+| 5 | `tar` | CVE-2026-26960 | 🟠 HIGH | 6.2.1 | 7.5.8 | Isto | ✅ nema nalaza |
+| 6 | `tar` | CVE-2026-29786 | 🟠 HIGH | 6.2.1 | 7.5.10 | Isto | ✅ nema nalaza |
+| 7 | `tar` | CVE-2026-31802 | 🟠 HIGH | 6.2.1 | 7.5.11 | Isto | ✅ nema nalaza |
+| 8 | `tar` | CVE-2026-59874 | 🟠 HIGH | 6.2.1 | 7.5.18 | Isto | ✅ nema nalaza |
+| 9 | `tar` | CVE-2026-73566 | 🟠 HIGH | 6.2.1 | 7.5.21 | Isto | ✅ nema nalaza |
+| 10 | `pacote` | CVE-2026-9496 | 🟠 HIGH | 18.0.6 | 21.5.1 | Isto | ✅ nema nalaza |
+| 11 | `sigstore` | CVE-2026-48815 | 🟠 HIGH | 2.3.1 | 4.1.1 | Isto | ✅ nema nalaza |
+| 12 | `minimatch` | CVE-2026-26996 | 🟠 HIGH | — | 10.2.1 | Isto | ✅ nema nalaza |
+| 13 | `minimatch` | CVE-2026-27903 | 🟠 HIGH | — | 10.2.3 | Isto | ✅ nema nalaza |
+| 14 | `minimatch` | CVE-2026-27904 | 🟠 HIGH | — | 10.2.3 | Isto | ✅ nema nalaza |
+
+**Analiza:** nijedan od ovih paketa nije ovisnost aplikacije. Svi pripadaju stablu
+ovisnosti **npm CLI-ja** u `/usr/local/lib/node_modules/npm`, koji dolazi ugrađen
+u službenu Node sliku. Aplikacija se u produkciji pokreće s `node src/server.js`,
+a ovisnosti se instaliraju u `deps` stageu i kopiraju kao gotov `node_modules` —
+npm u finalnoj slici nema nikakvu funkciju.
+
+**Mjera:** u `runtime` stageu uklanjaju se `npm`, `npx` i `yarn`. Time nestaje
+cijela ova skupina nalaza, a ujedno se doslovno ispunjava načelo „u finalnoj slici
+nema build alata".
+
+### 2.2 Nalazi u OS sloju — Alpine paketi
+
+| # | Komponenta | CVE | Ozbiljnost | Instalirano | Ispravljeno u | Korektivna mjera | Ponovno skeniranje |
+|---|-----------|-----|-----------|-------------|---------------|------------------|--------------------|
+| 15 | `libcrypto3` | CVE-2026-14456 | 🟠 HIGH | 3.5.6-r0 | 3.5.8-r0 | `apk --no-cache upgrade` u `runtime` stageu | ✅ nema nalaza |
+| 16 | `libcrypto3` | CVE-2026-45447 | 🟠 HIGH | 3.5.6-r0 | 3.5.7-r0 | Isto | ✅ nema nalaza |
+| 17 | `libssl3` | CVE-2026-14456 | 🟠 HIGH | 3.5.6-r0 | 3.5.8-r0 | Isto | ✅ nema nalaza |
+| 18 | `libssl3` | CVE-2026-45447 | 🟠 HIGH | 3.5.6-r0 | 3.5.7-r0 | Isto | ✅ nema nalaza |
+
+**Analiza:** ranjivosti OpenSSL-a naslijeđene su iz bazne slike. Sve imaju status
+`fixed`, što znači da Alpine repozitorij već sadrži zakrpanu verziju — službena
+Node slika naprosto još nije prepakirana s njom.
+
+**Mjera:** `apk --no-cache upgrade` prije prelaska na non-root korisnika.
+
+### 2.3 Sažetak po ozbiljnosti — PRIJE / POSLIJE
+
+Tri uzastopna skeniranja iste slike (`ticketing-api`; `frontend` i `worker` identično):
+
+| Faza | 🔴 CRITICAL | 🟠 HIGH | Ukupno | Status gatea |
+|------|------------|--------|--------|--------------|
+| **1. Početno stanje** (multi-stage, non-root, pinana bazna slika) | 1 | 23 | **24** | ❌ pada |
+| **2. Nakon uklanjanja npm/npx/yarn iz runtimea** | 0 | 4 | **4** | ❌ pada |
+| **3. Nakon `apk --no-cache upgrade`** | 0 | 0 | **0** | ✅ **prolazi** |
+
+Završno stanje potvrđeno u CI-ju:
+
+```
+Report Summary
+│ Target                                                                    │  Type  │ Vulnerabilities │
+│ ghcr.io/ikovacek95/ticketing-api:8f4d3b17527911a12522e0663e2c737438f1e01f │ alpine │        0        │
+```
 
 Naredba za brzo prebrojavanje nalaza:
 
@@ -106,6 +159,10 @@ Naredba za brzo prebrojavanje nalaza:
 trivy image --format json ghcr.io/ikovacek95/ticketing-api:<git-sha> \
   | jq '[.Results[].Vulnerabilities // [] | .[].Severity] | group_by(.) | map({(.[0]): length}) | add'
 ```
+
+> **Pouka:** quality gate je odradio točno ono zbog čega postoji — zaustavio je
+> objavu slike s CRITICAL ranjivošću i prisilio korektivnu mjeru **prije** nego
+> što je slika dospjela u registry. Nijedna ranjiva slika nije objavljena.
 
 ---
 
@@ -118,6 +175,8 @@ one su razlog zašto je broj nalaza već na početku vrlo nizak:
 |-------|----------------|-------|
 | Minimalna bazna slika | `node:20.20-alpine3.22` umjesto `node:20` (Debian) | Drastično manja površina napada (nema `apt`, `perl`, `openssl` alata…) |
 | Pinana verzija bazne slike | `20.20-alpine3.22`, ne `latest` | Reproducibilan build; nadogradnja je svjesna, verzionirana odluka |
+| **Uklanjanje npm/npx/yarn iz runtimea** | `rm -rf /usr/local/lib/node_modules/npm …` u `runtime` stageu | **Uklonilo 20 nalaza (1 CRITICAL + 19 HIGH)** — vidi §2.1 |
+| **Sigurnosne zakrpe OS-a** | `apk --no-cache upgrade` u `runtime` stageu | **Uklonilo 4 HIGH nalaza** (OpenSSL) — vidi §2.2 |
 | Multi-stage build | `deps` → `runtime` | U finalnoj slici nema npm cachea, build alata ni devDependencies |
 | Bez dev-ovisnosti u produkciji | `npm ci --omit=dev` | `nodemon` i njegovo stablo ovisnosti nisu u produkcijskoj slici |
 | Determinističke ovisnosti | `package-lock.json` + `npm ci` | Nema "drifta" verzija između builda i skeniranja |
@@ -126,6 +185,12 @@ one su razlog zašto je broj nalaza već na početku vrlo nizak:
 | Ispravno vlasništvo datoteka | `COPY --chown=app:app` | Aplikacija ne može mijenjati vlastiti kod |
 | Healthcheck | `HEALTHCHECK` (wget / pgrep) | Orkestrator uklanja "zombi" kontejnere iz prometa |
 | Minimalan build kontekst | `.dockerignore` | `.env`, `.git` i `node_modules` nikad ne ulaze u slojeve slike |
+
+> **Napomena o kompromisu:** `apk upgrade` znači da slika više nije bit-for-bit
+> reproducibilna kroz vrijeme, jer povlači najnovije zakrpe u trenutku builda.
+> Ocijenjeno je da je isporuka poznatih HIGH ranjivosti veći rizik od gubitka te
+> razine reproducibilnosti. Reproducibilnost **aplikacijskog** sloja ostaje potpuna
+> jer je pinana kroz `package-lock.json` i `npm ci`.
 
 Ojačanja na razini izvođenja (Compose i Kubernetes):
 
@@ -175,12 +240,33 @@ done
 
 ## 5. Nalazi `trivy config` — Kubernetes manifesti
 
+Skenirano automatski u CI pipelineu (`trivy config --severity HIGH,CRITICAL k8s/`),
+Trivy `0.65.0`:
+
+```
+Report Summary
+│         Target         │    Type    │ Misconfigurations │
+│ 00-namespace.yaml      │ kubernetes │         0         │
+│ 01-configmap.yaml      │ kubernetes │         0         │
+│ 02-secret.example.yaml │ kubernetes │         0         │
+│ 03-rbac.yaml           │ kubernetes │         0         │
+│ 04-postgres.yaml       │ kubernetes │         0         │
+│ 05-redis.yaml          │ kubernetes │         0         │
+│ 06-api.yaml            │ kubernetes │         0         │
+│ 07-worker.yaml         │ kubernetes │         0         │
+│ 08-frontend.yaml       │ kubernetes │         0         │
+│ 09-ingress.yaml        │ kubernetes │         0         │
+│ 10-networkpolicy.yaml  │ kubernetes │         0         │
+```
+
 | # | Datoteka | Pravilo (ID) | Ozbiljnost | Opis | Odluka / korektivna mjera | Status |
 |---|----------|--------------|-----------|------|---------------------------|--------|
-| 1 | `<UPISATI>` | `<AVD-KSV-....>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<otvoreno / riješeno / prihvaćen rizik>` |
-| 2 | `<UPISATI>` | `<AVD-KSV-....>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` | `<UPISATI>` |
+| — | svi manifesti | — | — | **Nema nalaza na razini HIGH/CRITICAL** | Ojačanja su ugrađena od početka (vidi tablicu u §3) | ✅ čisto |
 
-Poznata odstupanja koja su **svjesna odluka**, a Trivy ih može prijaviti:
+Nalazi niže ozbiljnosti (MEDIUM/LOW) ne blokiraju pipeline; prate se kroz SARIF
+izvještaj u GitHub Security tabu.
+
+Poznata odstupanja koja su **svjesna odluka**, a Trivy ih može prijaviti na nižim razinama:
 
 | Nalaz | Objekt | Obrazloženje |
 |-------|--------|--------------|
@@ -298,6 +384,8 @@ obrazloženje zašto nije iskoristiv, kompenzacijsku kontrolu i datum ponovne pr
 |----------|--------|
 | Reproducibilan build (lockfile + `npm ci`) | ✅ |
 | Minimalna, pinana bazna slika | ✅ |
+| Runtime bez npm/npx/yarn | ✅ |
+| Sigurnosne zakrpe OS paketa (`apk upgrade`) | ✅ |
 | Non-root izvođenje (UID 10001) | ✅ |
 | Read-only rootfs, bez capabilitiesa, bez eskalacije privilegija | ✅ |
 | Tajne odvojene od koda i slike | ✅ |
@@ -310,4 +398,14 @@ obrazloženje zašto nije iskoristiv, kompenzacijsku kontrolu i datum ponovne pr
 | RBAC s najmanjim privilegijama | ✅ |
 | Politika taggiranja i objave | ✅ |
 
-Preostali rizici: `<UPISATI nakon stvarnog skeniranja>`
+**Završno stanje slika:** 🔴 0 CRITICAL, 🟠 0 HIGH (uz `--ignore-unfixed`).
+Pipeline je zelen na sva tri servisa.
+
+**Preostali rizici:**
+
+| Rizik | Ozbiljnost | Ublažavanje |
+|-------|-----------|-------------|
+| `qs` (kroz `express@4`), `uuid@10` | 🟡 MEDIUM | Prihvaćen rizik, dokumentiran u §4; ne blokira gate na razini HIGH |
+| Nove ranjivosti bez dostupnog ispravka | varira | `--ignore-unfixed` ih propušta; prate se kroz SARIF u Security tabu i procjenjuju pri svakoj nadogradnji |
+| Ranjivosti objavljene nakon zadnjeg builda | varira | Ponovni build i skeniranje pri svakom pushu na `main`; preporuka je periodično ponovno izgraditi slike i bez promjene koda |
+| Gubitak bit-for-bit reproducibilnosti OS sloja | ⚪ LOW | Svjestan kompromis (vidi §3); aplikacijski sloj ostaje pinan |

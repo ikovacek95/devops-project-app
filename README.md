@@ -170,10 +170,15 @@ Objavljene slike:
 **Slika (Containerfile)**
 - Multi-stage build (`deps` → `runtime`); u finalnoj slici nema build alata ni dev-ovisnosti
 - Pinana minimalna bazna slika `node:20.20-alpine3.22`
+- **`npm`, `npx` i `yarn` uklonjeni iz runtime sloja** — aplikacija se pokreće s `node`, a npm-ovo stablo ovisnosti nosi CRITICAL/HIGH ranjivosti
+- **`apk --no-cache upgrade`** — sigurnosne zakrpe OS paketa (OpenSSL i sl.)
 - `npm ci --omit=dev --ignore-scripts` (deterministički, bez `postinstall` supply-chain rizika)
 - Non-root korisnik s numeričkim UID-om **10001**, `COPY --chown=app:app`
 - `HEALTHCHECK` (wget za HTTP servise, `pgrep` za worker)
 - `.dockerignore` sprječava ulazak `.env`, `.git` i `node_modules` u slojeve slike
+
+> Rezultat: **0 CRITICAL, 0 HIGH** u finalnim slikama (uz `--ignore-unfixed`).
+> Put od 24 nalaza do nule dokumentiran je u [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) §2.
 
 **Izvođenje (Compose)**
 - `read_only: true` + `tmpfs /tmp`, `cap_drop: [ALL]`, `no-new-privileges:true`
