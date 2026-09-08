@@ -1,0 +1,21 @@
+# =============================================================================
+# Namespace za cijelu aplikaciju.
+#
+# Pod Security Admission (PSA) oznake uključuju ugrađeni "restricted" profil -
+# najstroži standard koji zahtijeva non-root pokretanje, drop svih capabilitiesa,
+# zabranu privilege escalationa i RuntimeDefault seccomp profil.
+# Svaki pod u ovom namespaceu mora zadovoljiti te uvjete ili ga API server odbija.
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing
+    app.kubernetes.io/part-of: ticketing
+    # Ova oznaka je potrebna i za NetworkPolicy pravila (namespaceSelector).
+    kubernetes.io/metadata.name: ticketing
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

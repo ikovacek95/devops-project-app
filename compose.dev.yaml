@@ -1,0 +1,57 @@
+# =============================================================================
+# Razvojni override - hot-reload preko nodemona
+#
+# Pokretanje:
+#   podman-compose -f compose.yaml -f compose.dev.yaml up -d --build
+#
+# Što se mijenja u odnosu na compose.yaml:
+#   - build cilja `dev` stage (sadrži devDependencies, tj. nodemon)
+#   - izvorni kod se bind-mounta s hosta => promjena datoteke = automatski restart
+#   - NODE_ENV=development
+#   - read_only mora biti isključen jer nodemon zapisuje u radni direktorij
+#
+# SELINUX: bind-mountovi koriste `:Z` oznaku. Bez nje CentOS Stream 9 u
+# enforcing modu vraća "Permission denied" pri čitanju montiranog koda.
+# =============================================================================
+
+name: ticketing
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Containerfile
+      target: dev
+    image: localhost/ticketing-api:dev
+    environment:
+      NODE_ENV: development
+    command: ["npx", "nodemon", "--legacy-watch", "src/server.js"]
+    volumes:
+      - ./api/src:/app/src:Z
+    read_only: false
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Containerfile
+      target: dev
+    image: localhost/ticketing-worker:dev
+    environment:
+      NODE_ENV: development
+    command: ["npx", "nodemon", "--legacy-watch", "src/worker.js"]
+    volumes:
+      - ./worker/src:/app/src:Z
+    read_only: false
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Containerfile
+      target: dev
+    image: localhost/ticketing-frontend:dev
+    environment:
+      NODE_ENV: development
+    command: ["npx", "nodemon", "--legacy-watch", "src/server.js"]
+    volumes:
+      - ./frontend/src:/app/src:Z
+    read_only: false

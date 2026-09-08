@@ -1,0 +1,74 @@
+# =============================================================================
+# Ingress (Traefik, ugrađen u k3s) na hostu ticketing.local
+#
+#   http://ticketing.local/      -> frontend:3000
+#   http://ticketing.local/api/* -> api:8080  (uz stripPrefix middleware)
+#
+# Traefik Middleware `api-strip-prefix` uklanja prefiks /api prije prosljeđivanja
+# zahtjeva, pa API vidi npr. /events umjesto /api/events.
+#
+# Anotacija `traefik.ingress.kubernetes.io/router.middlewares` vrijedi za CIJELI
+# Ingress objekt, zato su /api i / razdvojeni u DVA Ingressa.
+#
+# Na hostu je potrebno dodati u /etc/hosts:
+#   <IP-k3s-cvora>  ticketing.local
+# =============================================================================
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: api-strip-prefix
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: api-strip-prefix
+    app.kubernetes.io/part-of: ticketing
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketing-api
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-api
+    app.kubernetes.io/part-of: ticketing
+  annotations:
+    # Format reference: <namespace>-<ime-middlewarea>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: ticketing-api-strip-prefix@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ticketing.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketing-frontend
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-frontend
+    app.kubernetes.io/part-of: ticketing
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ticketing.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

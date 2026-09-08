@@ -1,0 +1,121 @@
+# =============================================================================
+# Redis - queue između API-ja i workera (Deployment + ClusterIP Service)
+#
+# NAPOMENA O UID-u: službena slika `redis:7-alpine` sadrži korisnika `redis`
+# s UID 999 i GID 1000, pa se ovdje koristi taj UID umjesto 10001.
+#
+# Redis je ovdje VOLATILAN (emptyDir, bez perzistencije na disk) jer služi samo
+# kao prolazni queue. Ako pod padne, neobrađene poruke se gube - to je svjesna
+# odluka za labos; u produkciji bi se koristio PVC i AOF perzistencija.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/part-of: ticketing
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: ticketing
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/part-of: ticketing
+spec:
+  replicas: 1
+  strategy:
+    # Redis ima ReadWriteOnce semantiku queuea - ne želimo dvije instance odjednom.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: ticketing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/instance: ticketing
+        app.kubernetes.io/component: queue
+        app.kubernetes.io/part-of: ticketing
+    spec:
+      serviceAccountName: ticketing-sa
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: docker.io/library/redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --loglevel
+            - warning
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,120 @@
+# =============================================================================
+# Frontend - statički UI + /config endpoint (Deployment + ClusterIP Service)
+#
+# Frontend NE poziva API sa servera; on kroz /config vraća `API_BASE_URL`
+# preglednik korisnika, koji zatim izravno zove http://ticketing.local/api/...
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: ticketing
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: ticketing
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: ticketing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/instance: ticketing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/instance: ticketing
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/part-of: ticketing
+    spec:
+      serviceAccountName: ticketing-sa
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          # Vidi napomenu o taggiranju u k8s/06-api.yaml.
+          image: ghcr.io/ikovacek95/ticketing-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: ticketing-config
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 192Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}

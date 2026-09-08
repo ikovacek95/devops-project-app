@@ -1,0 +1,93 @@
+# =============================================================================
+# Worker servis - multi-stage build (Podman / Docker kompatibilan)
+#
+# Worker je pozadinski consumer bez HTTP servera, pa se healthcheck radi
+# provjerom da proces `src/worker.js` i dalje postoji (busybox `pgrep`).
+# =============================================================================
+
+# Bazna slika je pinana na minor verziju (20.20) i verziju Alpinea (3.22)
+# kako bi build bio reproducibilan (hadolint pravila DL3006 i DL3007).
+#
+# Tag se namjerno ponavlja u svakom stageu umjesto referenciranja preko ARG-a:
+# hadolint ne razrjesava ARG vrijednost pa FROM ${VAR} prijavljuje kao
+# netagiranu sliku (DL3006).
+
+# -----------------------------------------------------------------------------
+# Stage 1: deps - produkcijske ovisnosti
+# -----------------------------------------------------------------------------
+FROM docker.io/library/node:20.20-alpine3.22 AS deps
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --omit=dev --ignore-scripts \
+    && npm cache clean --force
+
+# -----------------------------------------------------------------------------
+# Stage 2: dev - koristi se samo za lokalni razvoj (hot-reload)
+# -----------------------------------------------------------------------------
+FROM docker.io/library/node:20.20-alpine3.22 AS dev
+
+ENV NODE_ENV=development \
+    NPM_CONFIG_CACHE=/tmp/.npm
+
+WORKDIR /app
+
+RUN addgroup -S app && adduser -S -u 10001 -G app app
+
+COPY --chown=app:app package.json package-lock.json ./
+
+RUN npm ci --ignore-scripts \
+    && npm cache clean --force \
+    && chown -R app:app /app
+
+COPY --chown=app:app src ./src
+
+USER 10001
+
+CMD ["npx", "nodemon", "src/worker.js"]
+
+# -----------------------------------------------------------------------------
+# Stage 3: runtime - finalna produkcijska slika
+# -----------------------------------------------------------------------------
+FROM docker.io/library/node:20.20-alpine3.22 AS runtime
+
+ENV NODE_ENV=production \
+    NPM_CONFIG_CACHE=/tmp/.npm
+
+WORKDIR /app
+
+# Non-root korisnik s FIKSNIM numerickim UID-om 10001 te uklanjanje npm-a.
+#
+# ZASTO SE npm UKLANJA: aplikacija se u produkciji pokrece s `node src/server.js`,
+# a ovisnosti su vec instalirane u `deps` stageu. npm koji dolazi uz baznu sliku
+# nosi vlastito stablo ovisnosti (tar, pacote, sigstore, minimatch...) koje
+# redovito sadrzi HIGH/CRITICAL ranjivosti i rusi Trivy quality gate, iako se
+# u runtimeu nikad ne izvrsava. Uklanjanjem npm-a, npx-a i yarna povrsina
+# napada finalne slike znatno se smanjuje.
+# `apk upgrade` povlaci sigurnosne zakrpe OS paketa Alpinea (npr. openssl /
+# libcrypto3 / libssl3). Bez toga finalna slika nasljedjuje CVE-ove bazne
+# slike sve dok Node ne objavi novu. Kompromis: build vise nije bit-for-bit
+# reproducibilan kroz vrijeme, ali zauzvrat ne isporucujemo poznate ranjivosti.
+# Verzija aplikacije i njezinih ovisnosti ostaje pinana (package-lock.json).
+RUN apk --no-cache upgrade \
+    && addgroup -S app && adduser -S -u 10001 -G app app \
+    && rm -rf /usr/local/lib/node_modules/npm \
+              /usr/local/bin/npm \
+              /usr/local/bin/npx \
+              /opt/yarn-v* \
+              /usr/local/bin/yarn \
+              /usr/local/bin/yarnpkg
+
+COPY --from=deps --chown=app:app /app/node_modules ./node_modules
+COPY --chown=app:app package.json package-lock.json ./
+COPY --chown=app:app src ./src
+
+USER 10001
+
+# Worker ne izlaže port, pa healthcheck provjerava da glavni proces radi.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD pgrep -f "src/worker.js" > /dev/null || exit 1
+
+CMD ["node", "src/worker.js"]

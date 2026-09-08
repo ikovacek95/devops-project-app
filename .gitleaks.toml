@@ -1,0 +1,29 @@
+# =============================================================================
+# Gitleaks konfiguracija - Secure Event Ticketing Platform
+#
+# Zadrzavamo SVA ugradena pravila (`useDefault = true`) i dodajemo iskljucivo
+# usko ciljane iznimke za dokumentirane lazne pozitivne nalaze.
+#
+# NACELO: allowlist mora biti sto uzi. Ne iskljucujemo cijele datoteke ni
+# direktorije, nego tocno definiran uzorak teksta. Ako netko u istu datoteku
+# doda stvarnu tajnu, gitleaks ce je i dalje prijaviti.
+# =============================================================================
+
+title = "Gitleaks - Secure Event Ticketing Platform"
+
+[extend]
+# Naslijedi kompletan zadani skup pravila (preko 150 detektora).
+useDefault = true
+
+[allowlist]
+description = """
+Primjeri objave slike u dokumentaciji koriste puni 40-znakovni git commit SHA
+(npr. ghcr.io/ikovacek95/ticketing-api:<sha>). Pravilo `generic-api-key`
+detektira ga zbog visoke entropije, ali rijec je o javnom identifikatoru
+commita, a ne o tajni. Regex je vezan uz konkretno ime slike ovog projekta
+kako iznimka ne bi propustila stvarne tajne.
+"""
+regexTarget = "line"
+regexes = [
+  '''ghcr\.io/ikovacek95/ticketing-(api|frontend|worker):[0-9a-f]{7,40}''',
+]

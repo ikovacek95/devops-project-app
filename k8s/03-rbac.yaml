@@ -1,0 +1,49 @@
+# =============================================================================
+# RBAC - ServiceAccount, Role i RoleBinding
+#
+# Aplikacija NE komunicira s Kubernetes API-jem, pa:
+#   - `automountServiceAccountToken: false` sprječava ubacivanje tokena u pod
+#     (napadač koji kompromitira kontejner ne dobiva vjerodajnice klastera)
+#   - Role sadrži samo read-only prava unutar vlastitog namespacea, potrebna
+#     eventualnim dijagnostičkim alatima; nema `create`, `delete` ni `secrets`.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ticketing-sa
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-sa
+    app.kubernetes.io/part-of: ticketing
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ticketing-reader
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-reader
+    app.kubernetes.io/part-of: ticketing
+rules:
+  # Minimalna read-only prava. Namjerno NEMA pristupa Secretima.
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "endpoints"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ticketing-reader-binding
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-reader-binding
+    app.kubernetes.io/part-of: ticketing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ticketing-reader
+subjects:
+  - kind: ServiceAccount
+    name: ticketing-sa
+    namespace: ticketing

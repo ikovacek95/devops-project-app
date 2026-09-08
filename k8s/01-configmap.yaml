@@ -1,0 +1,38 @@
+# =============================================================================
+# ConfigMap - SVE ne-tajne konfiguracijske varijable aplikacije.
+#
+# Tajne (lozinke, tokeni) NIKAD ne idu ovdje - one su u Secretu `ticketing-secret`
+# (vidi 02-secret.example.yaml).
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+  namespace: ticketing
+  labels:
+    app.kubernetes.io/name: ticketing-config
+    app.kubernetes.io/part-of: ticketing
+data:
+  # --- PostgreSQL ---
+  POSTGRES_DB: "ticketing"
+  POSTGRES_USER: "ticketing_user"
+  # Ime Kubernetes Servicea unutar namespacea `ticketing`.
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+
+  # --- Redis ---
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+
+  # --- Aplikacijski portovi ---
+  API_PORT: "8080"
+  FRONTEND_PORT: "3000"
+
+  # --- Ostalo ---
+  QUEUE_NAME: "ticket_orders"
+  NODE_ENV: "production"
+
+  # VAŽNO: ovu adresu koristi PREGLEDNIK korisnika (frontend je vraća kroz /config),
+  # zato ovdje ide vanjski Ingress URL, a NE interno ime servisa `http://api:8080`.
+  # Traefik Middleware `api-strip-prefix` uklanja prefiks /api prije prosljeđivanja.
+  API_BASE_URL: "http://ticketing.local/api"
