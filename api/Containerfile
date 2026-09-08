@@ -67,9 +67,21 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# Non-root korisnik s FIKSNIM numeričkim UID-om 10001.
-# Numerički UID je važan jer Kubernetes `runAsNonRoot` provjerava UID, a ne ime.
-RUN addgroup -S app && adduser -S -u 10001 -G app app
+# Non-root korisnik s FIKSNIM numerickim UID-om 10001 te uklanjanje npm-a.
+#
+# ZASTO SE npm UKLANJA: aplikacija se u produkciji pokrece s `node src/server.js`,
+# a ovisnosti su vec instalirane u `deps` stageu. npm koji dolazi uz baznu sliku
+# nosi vlastito stablo ovisnosti (tar, pacote, sigstore, minimatch...) koje
+# redovito sadrzi HIGH/CRITICAL ranjivosti i rusi Trivy quality gate, iako se
+# u runtimeu nikad ne izvrsava. Uklanjanjem npm-a, npx-a i yarna povrsina
+# napada finalne slike znatno se smanjuje.
+RUN addgroup -S app && adduser -S -u 10001 -G app app \
+    && rm -rf /usr/local/lib/node_modules/npm \
+              /usr/local/bin/npm \
+              /usr/local/bin/npx \
+              /opt/yarn-v* \
+              /usr/local/bin/yarn \
+              /usr/local/bin/yarnpkg
 
 # node_modules dolazi iz deps stagea - u finalnoj slici nema npm cachea ni build alata.
 COPY --from=deps --chown=app:app /app/node_modules ./node_modules
