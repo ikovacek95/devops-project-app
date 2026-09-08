@@ -1,0 +1,28 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npm/
+coverage/
+.nyc_output/
+
+# Okolina i tajne - NIKAD ne commitati stvarne vrijednosti
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+kubeconfig
+k8s/02-secret.yaml
+
+# Alati / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Izlazi alata za skeniranje
+trivy-results*.sarif
+trivy-report*.json
+gitleaks-report.json
