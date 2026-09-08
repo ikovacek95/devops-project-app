@@ -1,0 +1,21 @@
+# Datoteke koje NIKAD ne ulaze u build kontekst slike.
+# Smanjuje veličinu konteksta i sprječava curenje tajni u slojeve slike.
+node_modules
+npm-debug.log
+npm-debug.log*
+yarn-error.log
+.git
+.gitignore
+.github
+.env
+.env.*
+!.env.example
+*.md
+Containerfile
+Dockerfile
+.dockerignore
+coverage
+.nyc_output
+.vscode
+.idea
+*.log
