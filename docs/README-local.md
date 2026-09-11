@@ -334,6 +334,48 @@ podman image prune -f
 podman system prune -f
 ```
 
+### 7.1 Provjera urednog gašenja (graceful shutdown)
+
+Zaustavljanje mora proći **bez** `SIGKILL` upozorenja. Ako se pojavi ispis poput
+
+```
+WARN[0010] StopSignal SIGTERM failed to stop container ticketing-worker in 10 seconds, resorting to SIGKILL
+```
+
+servis ne obrađuje `SIGTERM` i narudžba koja je u obradi može se izgubiti —
+vidi scenarij 8 u [`runbook.md`](./runbook.md).
+
+Očekivano ponašanje:
+
+```bash
+# Gašenje traje 1-2 s po servisu, bez upozorenja
+time podman-compose down
+
+# Izlazni kod mora biti 0 (uredan izlaz), a NE 137 (= 128 + 9, SIGKILL)
+podman-compose up -d
+podman stop ticketing-worker
+podman inspect ticketing-worker --format '{{.State.ExitCode}}'    # 0
+
+# U logu se vidi uredan tijek
+podman logs --tail=5 ticketing-worker
+#   Primljen SIGTERM - zapocinjem uredno gasenje workera...
+#   Obrada zavrsena, zatvaram veze...
+#   Worker uredno zaustavljen.
+```
+
+Worker u `compose.yaml` ima `stop_grace_period: 30s` jer pri gašenju dovršava
+narudžbu koja je već uzeta iz Redisa, a još nije upisana u PostgreSQL.
+
+Varijable koje upravljaju gašenjem (vidi `.env.example`):
+
+| Varijabla | Lokalno | U k3s-u | Značenje |
+|-----------|---------|---------|----------|
+| `SHUTDOWN_DRAIN_MS` | `0` | `5000` | Koliko servis još poslužuje promet nakon SIGTERM-a, da ga load balancer stigne maknuti iz rotacije |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | `15000` | Krajnji rok prije prisilnog izlaza |
+
+Lokalno nema load balancera pa je drain 0 (trenutno gašenje); u Kubernetesu je
+5 s kako tijekom rolling updatea ne bi bilo 502 odgovora.
+
 ---
 
 ## 8. Ručno skeniranje slika (lokalno)

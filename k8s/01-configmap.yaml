@@ -32,6 +32,17 @@ data:
   QUEUE_NAME: "ticket_orders"
   NODE_ENV: "production"
 
+  # Graceful shutdown: koliko servis nakon SIGTERM-a jos posluzuje promet prije
+  # nego zatvori HTTP server. Uklanjanje poda iz Endpointa Servicea nije
+  # trenutacno (kube-proxy i Traefik trebaju koji trenutak), pa bi bez ove
+  # odgode klijent tijekom rolling updatea mogao dobiti 502.
+  # Mora biti manje od terminationGracePeriodSeconds (30 s).
+  SHUTDOWN_DRAIN_MS: "5000"
+
+  # Krajnji rok za uredno gasenje prije prisilnog izlaza (process.exit(1)).
+  # Takoder mora stati unutar terminationGracePeriodSeconds.
+  SHUTDOWN_TIMEOUT_MS: "15000"
+
   # VAŽNO: ovu adresu koristi PREGLEDNIK korisnika (frontend je vraća kroz /config),
   # zato ovdje ide vanjski Ingress URL, a NE interno ime servisa `http://api:8080`.
   # Traefik Middleware `api-strip-prefix` uklanja prefiks /api prije prosljeđivanja.

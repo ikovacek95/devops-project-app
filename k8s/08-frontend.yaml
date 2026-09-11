@@ -55,6 +55,7 @@ spec:
     spec:
       serviceAccountName: ticketing-sa
       automountServiceAccountToken: false
+      # Mora pokriti SHUTDOWN_DRAIN_MS (5 s) + dovrsavanje zapocetih zahtjeva.
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true

@@ -28,6 +28,22 @@ app.use((req, _res, next) => {
 
 const port = Number(process.env.API_PORT || 8080);
 
+// Krajnji rok za uredno gasenje; nakon njega izlazimo s kodom 1 umjesto
+// da cekamo SIGKILL od runtimea.
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.SHUTDOWN_TIMEOUT_MS || 10000);
+
+// Koliko cekamo IZMEDU proglasenja "not ready" i zatvaranja servera.
+// U Kubernetesu uklanjanje poda iz Endpointa nije trenutacno - kube-proxy i
+// Ingress trebaju koji trenutak da prestanu slati promet. Bez te odgode klijent
+// moze dobiti 502 tijekom rolling updatea. Lokalno (compose) nema load balancera
+// pa je zadana vrijednost 0, a u k8s ConfigMapu se postavlja na 5000 ms.
+const SHUTDOWN_DRAIN_MS = Number(process.env.SHUTDOWN_DRAIN_MS || 0);
+
+// Cim krene gasenje, /readyz vraca 503. U Kubernetesu to uklanja pod iz
+// Endpointa Servicea prije nego prestane primati konekcije, pa se tijekom
+// rolling updatea promet preusmjeri na zdrave replike bez ijednog 502/504.
+let shuttingDown = false;
+
 const events = [
     { id: "evt-1001", name: "DevSecOps Bootcamp", location: "Zagreb", availableTickets: 150 },
     { id: "evt-1002", name: "Cloud Native Day", location: "Split", availableTickets: 200 },
@@ -66,6 +82,12 @@ app.get("/healthz", (_req, res) => {
 });
 
 app.get("/readyz", async (_req, res) => {
+    // Tijekom gasenja se namjerno proglasavamo "not ready" kako bi nas
+    // Service/load balancer prestao slati promet jos dok uredno zavrsavamo.
+    if (shuttingDown) {
+        return res.status(503).json({ status: "shutting-down" });
+    }
+
     try {
         await pgPool.query("SELECT 1");
         await redisClient.ping();
@@ -123,9 +145,13 @@ app.get("/tickets/orders", async (_req, res) => {
     }
 });
 
+let server = null;
+
 connectRedis()
     .then(() => {
-        app.listen(port, () => {
+        // Referencu na server cuvamo kako bismo pri gasenju mogli pozvati
+        // server.close() i pustiti da se zapoceti zahtjevi dovrse.
+        server = app.listen(port, () => {
             console.log(`API listening on port ${port}`);
         });
     })
@@ -134,10 +160,54 @@ connectRedis()
         process.exit(1);
     });
 
-process.on("SIGTERM", async () => {
-    await pgPool.end();
-    if (redisClient.isOpen) {
-        await redisClient.quit();
+async function shutdown(signal) {
+    if (shuttingDown) {
+        return;
     }
-    process.exit(0);
-});
+    shuttingDown = true;
+    console.log(`Primljen ${signal} - zapocinjem uredno gasenje API-ja...`);
+
+    // Sigurnosni ventil ako se neki zahtjev ili veza zaglavi.
+    const forceExit = setTimeout(() => {
+        console.error("Uredno gasenje predugo traje - prisilni izlaz.");
+        process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceExit.unref();
+
+    try {
+        // 1) Pusti da load balancer primijeti da vise nismo ready (vidi
+        //    SHUTDOWN_DRAIN_MS). Zahtjevi se za to vrijeme normalno posluzuju.
+        if (SHUTDOWN_DRAIN_MS > 0) {
+            console.log(`Drain faza: ${SHUTDOWN_DRAIN_MS} ms prije zatvaranja servera...`);
+            await new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS));
+        }
+
+        if (server) {
+            // 2) Prestani primati NOVE konekcije i pricekaj da se zavrse zahtjevi
+            //    koji su u tijeku. Node 19+ pritom sam zatvara neaktivne
+            //    keep-alive konekcije, pa close() ne visi do keepAliveTimeouta.
+            await new Promise((resolve, reject) => {
+                server.close((error) => (error ? reject(error) : resolve()));
+            });
+        }
+        console.log("HTTP server zatvoren, zatvaram veze prema bazi i Redisu...");
+
+        if (redisClient.isOpen) {
+            await redisClient.quit();
+        }
+        await pgPool.end();
+
+        clearTimeout(forceExit);
+        console.log("API uredno zaustavljen.");
+        process.exit(0);
+    } catch (error) {
+        console.error("Greska pri gasenju:", error.message);
+        process.exit(1);
+    }
+}
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.on(signal, () => {
+        shutdown(signal);
+    });
+}
