@@ -55,6 +55,9 @@ spec:
     spec:
       serviceAccountName: ticketing-sa
       automountServiceAccountToken: false
+      # Mora pokriti: SHUTDOWN_DRAIN_MS (5 s) + dovrsavanje zapocetih zahtjeva
+      # + zatvaranje veza prema bazi i Redisu. Tek nakon isteka ovog roka
+      # kubelet salje SIGKILL.
       terminationGracePeriodSeconds: 30
       # Replike se raspoređuju na različite čvorove ako ih ima (na jednočvornom
       # k3s klasteru pravilo je "best effort" i ne blokira raspoređivanje).

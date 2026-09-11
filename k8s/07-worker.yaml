@@ -35,6 +35,11 @@ spec:
     spec:
       serviceAccountName: ticketing-sa
       automountServiceAccountToken: false
+      # Worker pri SIGTERM-u prestaje uzimati NOVE poruke, ali do kraja dovrsava
+      # onu koju trenutno obraduje. Poruka je u tom trenutku vec uklonjena iz
+      # Redisa, a jos nije upisana u PostgreSQL - prekid bi znacio TRAJAN GUBITAK
+      # narudzbe. Ovih 30 s je s velikom rezervom dovoljno: najgori slucaj je
+      # BRPOP timeout (1 s) + trajanje jednog INSERT-a.
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
