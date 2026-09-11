@@ -306,6 +306,32 @@ done
 # Svi odgovori moraju biti 200.
 ```
 
+> **Zašto ovo stvarno radi bez prekida.** Osim `maxUnavailable: 0`, nužan je i
+> graceful shutdown u aplikaciji. Pod koji dobije `SIGTERM` odmah počinje vraćati
+> 503 na `/readyz` (Kubernetes ga miče iz Endpointa Servicea), zatim još
+> `SHUTDOWN_DRAIN_MS` (5 s, `k8s/01-configmap.yaml`) normalno poslužuje promet
+> dok Traefik i kube-proxy ne osvježe rute, pa tek onda zatvara server i
+> dovršava zahtjeve u tijeku.
+>
+> Bez te drain faze pod zatvori socket u istom trenutku kad mu load balancer
+> pošalje zahtjev → klijent dobije 502. Detalji i dijagnostika: scenarij 8 u
+> [`runbook.md`](./runbook.md).
+
+Provjera da se podovi gase **uredno**, a ne preko SIGKILL-a:
+
+```bash
+# Izlazni kod prethodne instance mora biti 0, a ne 137 (= 128 + 9)
+kubectl -n ticketing get pod <stari-pod> \
+  -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}{"\n"}'
+
+# U logu se vidi uredan tijek gasenja
+kubectl -n ticketing logs deploy/api --tail=10
+#   Primljen SIGTERM - zapocinjem uredno gasenje API-ja...
+#   Drain faza: 5000 ms prije zatvaranja servera...
+#   HTTP server zatvoren, zatvaram veze prema bazi i Redisu...
+#   API uredno zaustavljen.
+```
+
 Provjera stanja i povijesti:
 
 ```bash

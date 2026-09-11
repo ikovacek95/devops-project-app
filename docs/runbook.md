@@ -34,6 +34,7 @@ Tablica najčešćih statusa:
 | `OOMKilled` (u `Last State`) | Memorijski limit premalen | [6](#scenarij-6) |
 | `Pending` | Nema resursa ili PVC nije Bound | [3](#scenarij-3) |
 | `Permission denied` u logu (Compose) | SELinux bez `:Z` oznake | [7](#scenarij-7) |
+| `SIGTERM failed to stop container ... resorting to SIGKILL` | Nema graceful shutdowna | [8](#scenarij-8) |
 
 ---
 
@@ -647,6 +648,199 @@ curl -s http://localhost:8080/tickets/orders | jq 'length'
 ### Prevencija
 Svaki novi bind-mount u `compose.yaml`/`compose.dev.yaml` **mora** imati `:Z` ili `:z`.
 Imenovani volumeni (npr. `pgdata`) ne trebaju oznaku — Podman ih sam ispravno označava.
+
+---
+
+<a id="scenarij-8"></a>
+## Scenarij 8 — Gubitak poruke pri gašenju workera (nedostatak graceful shutdowna)
+
+### Simptom
+
+Pri zaustavljanju okruženja `podman-compose down` traje neuobičajeno dugo i ispisuje:
+
+```
+WARN[0010] StopSignal SIGTERM failed to stop container ticketing-worker in 10 seconds, resorting to SIGKILL
+WARN[0020] StopSignal SIGTERM failed to stop container ticketing-frontend in 10 seconds, resorting to SIGKILL
+```
+
+U Kubernetesu se isti kvar vidi kao:
+- pod ostaje u statusu `Terminating` punih `terminationGracePeriodSeconds` (30 s), pa nestane
+- tijekom rolling updatea narudžba koja je bila u obradi **ne pojavi se** u `GET /tickets/orders`
+- `redis-cli LLEN ticket_orders` pokazuje 0 (poruka je uzeta iz queuea), ali zapisa u bazi nema
+
+### Dijagnostika
+
+```bash
+# --- Compose ---
+# Izmjeri koliko traje zaustavljanje pojedinog kontejnera
+time podman stop ticketing-worker
+# Ako traje ~10 s i zavrsi SIGKILL-om, proces ne obraduje SIGTERM.
+
+# Potvrdi izlazni kod. 137 = 128 + 9 (SIGKILL) -> proces je UBIJEN.
+# 0 = proces se sam uredno ugasio.
+podman inspect ticketing-worker --format '{{.State.ExitCode}}'
+
+# Ispisuje li servis ista pri gasenju?
+podman logs --tail=20 ticketing-worker
+
+# --- Kubernetes ---
+kubectl -n ticketing delete pod -l app.kubernetes.io/name=worker --grace-period=30
+kubectl -n ticketing get pods -w      # koliko dugo stoji u Terminating?
+
+kubectl -n ticketing get pod <worker-pod> \
+  -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}{"\n"}'
+# 137 -> SIGKILL
+
+# DOKAZ GUBITKA PORUKE: ubaci narudzbu pa odmah restartaj worker
+OID=$(curl -s -X POST http://ticketing.local/api/tickets/purchase \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":"evt-1001","customerEmail":"shutdown@algebra.hr","quantity":1}' | jq -r .orderId)
+kubectl -n ticketing rollout restart deployment/worker
+sleep 15
+curl -s http://ticketing.local/api/tickets/orders | jq --arg id "$OID" '.[] | select(.order_id==$id)'
+# Prazan rezultat => narudzba je izgubljena.
+```
+
+Provjera da signal uopće može stići do procesa:
+
+```bash
+# CMD mora biti EXEC forma. Kod shell forme (CMD node src/server.js) proces
+# se pokrece kao dijete /bin/sh -c, a sh NE prosljeduje SIGTERM djetetu.
+grep -n '^CMD' api/Containerfile frontend/Containerfile worker/Containerfile
+# Ispravno: CMD ["node", "src/server.js"]
+
+# Proces mora biti PID 1 u kontejneru:
+podman exec ticketing-worker ps -o pid,args
+# 1 node src/worker.js
+```
+
+### Uzrok
+
+Tri odvojena nedostatka u aplikacijskom kodu (Containerfileovi su bili ispravni —
+CMD je već bio exec forma, pa je signal uredno stizao do Node.js procesa):
+
+1. **`worker`** — imao je `SIGTERM` handler, ali je glavna petlja koristila
+   `redisClient.brPop(queueName, 0)`. Nula u Redisu znači **„blokiraj zauvijek"**.
+   Handler je zatim zvao `redisClient.quit()`, a `quit()` u node-redisu čeka da
+   se dovrše komande u tijeku — a BRPOP se nikad ne dovršava. Nastao je
+   **deadlock**: handler se pokrene, ali nikad ne dođe do `process.exit(0)`.
+   Uz to nije postojala zastavica koja bi zaustavila uzimanje novih poruka, pa je
+   `pgPool.end()` mogao zatvoriti bazu **usred** `INSERT`-a → trajan gubitak narudžbe.
+
+2. **`frontend`** — nije imao **nikakav** signal handler. Node.js kao PID 1 ne
+   primjenjuje zadanu akciju za signale, pa je proces jednostavno ignorirao
+   SIGTERM i čekao SIGKILL.
+
+3. **`api`** — imao je handler koji se brzo izvršavao (zato se nije pojavio u
+   upozorenjima), ali nikad nije zvao `server.close()`. Zahtjevi u tijeku bili su
+   naglo prekinuti, a pod je nastavljao primati promet sve do zadnjeg trenutka.
+
+### Korektivna mjera
+
+Implementiran je graceful shutdown u sva tri servisa:
+
+| Servis | Mjera |
+|--------|-------|
+| `worker` | `BRPOP` s konačnim timeoutom (1 s) umjesto 0; zastavica `shuttingDown`; shutdown čeka `workerLoopPromise` da se poruka u obradi **dovrši**; tek onda `quit()` + `pool.end()` |
+| `api` | `server.close()` + čekanje zahtjeva u tijeku; `/readyz` vraća 503 čim krene gašenje; drain faza; zatvaranje Redisa i PG poola |
+| `frontend` | dodan `SIGTERM`/`SIGINT` handler sa `server.close()`; `/healthz` vraća 503 tijekom gašenja |
+
+Svi servisi imaju i sigurnosni timeout (`SHUTDOWN_TIMEOUT_MS`) nakon kojeg izlaze
+s kodom 1 umjesto da vise do SIGKILL-a.
+
+Ključni detalj za zero-downtime rolling update je **drain faza**
+(`SHUTDOWN_DRAIN_MS`, u `k8s/01-configmap.yaml` postavljena na 5000 ms):
+
+```
+SIGTERM
+  → /readyz odmah vraća 503        (Kubernetes miče pod iz Endpointa Servicea)
+  → čekaj SHUTDOWN_DRAIN_MS        (Traefik/kube-proxy prestaju slati promet)
+  → server.close()                 (dovrši zahtjeve u tijeku)
+  → zatvori Redis i PostgreSQL
+  → process.exit(0)
+```
+
+Bez drain faze postoji utrka: pod zatvori socket u istom trenutku kad mu load
+balancer pošalje novi zahtjev → klijent dobije `ECONNRESET` / 502.
+
+Konfiguracija okruženja:
+
+```yaml
+# compose.yaml - worker dobiva 30 s umjesto zadanih 10 s
+stop_grace_period: 30s
+
+# k8s/07-worker.yaml
+terminationGracePeriodSeconds: 30
+```
+
+> **Preostalo ograničenje (svjesno):** queue radi po `at-most-once` semantici.
+> Poruka se iz Redisa uklanja u trenutku `BRPOP`-a, pa ako `INSERT` padne zbog
+> greške baze, narudžba se gubi. Graceful shutdown pokriva **gašenje**, ne i pad
+> baze. Za `at-least-once` trebalo bi koristiti `BLMOVE` u processing-listu i
+> brisati poruku tek nakon potvrđenog upisa.
+
+### Validacija
+
+```bash
+# 1) Ponovno izgradi slike s ispravkom
+podman-compose build
+podman-compose up -d
+
+# 2) Zaustavljanje vise NE smije ispisati SIGKILL upozorenje
+time podman-compose down
+# Ocekivano: nema "resorting to SIGKILL", gasenje traje 1-2 s po servisu
+
+# 3) Izlazni kod mora biti 0, ne 137
+podman-compose up -d
+podman stop ticketing-worker
+podman inspect ticketing-worker --format '{{.State.ExitCode}}'   # 0
+
+# 4) U logu se mora vidjeti uredan tijek gasenja
+podman logs --tail=10 ticketing-worker
+#   Primljen SIGTERM - zapocinjem uredno gasenje workera...
+#   Obrada zavrsena, zatvaram veze...
+#   Worker uredno zaustavljen.
+```
+
+Dokaz da se narudžba **više ne gubi**:
+
+```bash
+# Ubaci narudzbu i ODMAH restartaj worker
+OID=$(curl -s -X POST http://ticketing.local/api/tickets/purchase \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":"evt-1001","customerEmail":"shutdown@algebra.hr","quantity":1}' | jq -r .orderId)
+kubectl -n ticketing rollout restart deployment/worker
+kubectl -n ticketing rollout status deployment/worker --timeout=120s
+
+curl -s http://ticketing.local/api/tickets/orders | jq --arg id "$OID" '.[] | select(.order_id==$id)'
+# Zapis POSTOJI sa status="processed" => poruka nije izgubljena.
+```
+
+Dokaz zero-downtime rolling updatea:
+
+```bash
+# U jednom terminalu - kontinuirano mjeri dostupnost
+while true; do
+  printf '%s %s\n' "$(date +%T)" "$(curl -s -o /dev/null -w '%{http_code}' http://ticketing.local/api/healthz)"
+  sleep 0.3
+done
+
+# U drugom terminalu
+kubectl -n ticketing rollout restart deployment/api
+kubectl -n ticketing rollout status deployment/api --timeout=180s
+# Svi odgovori moraju ostati 200 - nijedan 502/503.
+
+# Podovi se moraju gasiti UREDNO (exit 0), a ne preko SIGKILL-a
+kubectl -n ticketing get events --field-selector reason=Killing | tail -5
+```
+
+### Prevencija
+
+Svaki novi servis mora imati signal handler prije nego uđe u produkciju.
+Kontrolna lista: exec forma `CMD` · handler za `SIGTERM` i `SIGINT` ·
+prestanak primanja novog posla · dovršavanje posla u tijeku · zatvaranje veza ·
+sigurnosni timeout. Blokirajući pozivi (`BRPOP`, `BLPOP`, `BLMOVE`) **nikada**
+ne smiju imati timeout 0 u servisu koji se mora moći uredno ugasiti.
 
 ---
 

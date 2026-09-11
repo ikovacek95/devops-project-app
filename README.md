@@ -16,7 +16,7 @@ Ciljna platforma: **CentOS Stream 9**, rootless **Podman** + `podman-compose`, *
 | [`docs/README-local.md`](docs/README-local.md) | **1. dio** — preduvjeti na CentOS 9 (Podman, firewalld, SELinux `:Z`), pokretanje kroz `podman-compose`, hot-reload profil, validacija svih endpointa i dokaz perzistencije |
 | [`docs/README-deploy.md`](docs/README-deploy.md) | **2. dio** — instalacija k3s, firewalld pravila, kubeconfig, kreiranje Secreta, primjena manifesta, `/etc/hosts`, validacija, **rolling update** i **rollback** |
 | [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) | Sigurnosno izvješće: naredbe za `trivy image/fs/config`, tablice nalaza s korektivnim mjerama (prije/poslije) i **politika taggiranja i objave slika** |
-| [`docs/runbook.md`](docs/runbook.md) | Troubleshooting runbook — 7 incidentnih scenarija u formatu simptom / dijagnostika / uzrok / korektivna mjera / validacija |
+| [`docs/runbook.md`](docs/runbook.md) | Troubleshooting runbook — 8 incidentnih scenarija u formatu simptom / dijagnostika / uzrok / korektivna mjera / validacija |
 
 ---
 
@@ -195,6 +195,9 @@ Objavljene slike:
 - RBAC s najmanjim privilegijama (bez pristupa Secretima)
 - `NetworkPolicy`: default-deny ingress + eksplicitne bijele liste
 - Rolling update `maxSurge: 1, maxUnavailable: 0` (nula prekida)
+- **Graceful shutdown** u sva tri servisa: `SIGTERM`/`SIGINT` handler, drain faza
+  (`SHUTDOWN_DRAIN_MS`), dovršavanje zahtjeva i poruka u obradi, pa tek onda
+  zatvaranje veza — bez toga rolling update gubi narudžbe (vidi scenarij 8 u runbooku)
 
 **Pipeline**
 - `npm audit` (gate HIGH) · `gitleaks` · `hadolint` · `trivy image` (gate HIGH/CRITICAL) · `trivy config`
