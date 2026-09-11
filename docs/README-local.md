@@ -380,15 +380,49 @@ Lokalno nema load balancera pa je drain 0 (trenutno gašenje); u Kubernetesu je
 
 ## 8. Ručno skeniranje slika (lokalno)
 
+### 8.1 Instalacija Trivyja na CentOS Stream 9
+
 ```bash
-# Trivy kroz kontejner (nije potrebna instalacija na hostu)
+# Na čistom sustavu dnf NE uvozi automatski Aqua Security GPG ključ, pa
+# instalacija pada s "GPG check FAILED". Ključ se uvozi ručno PRIJE instalacije:
+sudo rpm --import https://get.trivy.dev/rpm/public.key
+sudo dnf -y install trivy
+
+trivy --version    # Version: 0.74.0
+```
+
+> **Ne koristiti `--nogpgcheck`.** Time bi se zaobišla provjera potpisa paketa,
+> odnosno upravo ona kontrola integriteta lanca opskrbe koju ovim alatom želimo
+> osigurati.
+
+Alternativa bez instalacije na host — Trivy kroz kontejner:
+
+```bash
 podman run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$HOME/.cache/trivy:/root/.cache/trivy:Z" \
-  docker.io/aquasec/trivy:latest image --severity HIGH,CRITICAL localhost/ticketing-api:local
+  docker.io/aquasec/trivy:0.74.0 image --severity HIGH,CRITICAL localhost/ticketing-api:local
 ```
 
-Detalji i predložak izvještaja: [`security/image-scan-report.md`](./security/image-scan-report.md).
+### 8.2 Usporedba prije/poslije
+
+Učinak ojačanja najbolje se vidi usporedbom **sirove bazne slike** i **finalne slike**:
+
+```bash
+# PRIJE - sirova bazna slika: 24 nalaza (23 HIGH + 1 CRITICAL)
+trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+  docker.io/library/node:20.20-alpine3.22
+
+# POSLIJE - objavljena ojačana slika: 0 nalaza
+trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+  ghcr.io/ikovacek95/ticketing-api:<git-sha>
+```
+
+Obje naredbe može ponoviti bilo tko i dobiti iste brojke — mjerenje je
+reproducibilno jer uspoređuje dvije trajno dostupne slike.
+
+Stvarni rezultati, popis CVE-a i korektivne mjere:
+[`security/image-scan-report.md`](./security/image-scan-report.md).
 
 ---
 

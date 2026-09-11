@@ -15,7 +15,7 @@ Ciljna platforma: **CentOS Stream 9**, rootless **Podman** + `podman-compose`, *
 |----------|---------|
 | [`docs/README-local.md`](docs/README-local.md) | **1. dio** — preduvjeti na CentOS 9 (Podman, firewalld, SELinux `:Z`), pokretanje kroz `podman-compose`, hot-reload profil, validacija svih endpointa i dokaz perzistencije |
 | [`docs/README-deploy.md`](docs/README-deploy.md) | **2. dio** — instalacija k3s, firewalld pravila, kubeconfig, kreiranje Secreta, primjena manifesta, `/etc/hosts`, validacija, **rolling update** i **rollback** |
-| [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) | Sigurnosno izvješće: naredbe za `trivy image/fs/config`, tablice nalaza s korektivnim mjerama (prije/poslije) i **politika taggiranja i objave slika** |
+| [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) | Sigurnosno izvješće: naredbe za `trivy image/fs/config`, tablice nalaza s korektivnim mjerama (prije/poslije), **neovisna ručna verifikacija na CentOS Stream 9** i **politika taggiranja i objave slika** |
 | [`docs/runbook.md`](docs/runbook.md) | Troubleshooting runbook — 8 incidentnih scenarija u formatu simptom / dijagnostika / uzrok / korektivna mjera / validacija |
 
 ---
@@ -178,7 +178,8 @@ Objavljene slike:
 - `.dockerignore` sprječava ulazak `.env`, `.git` i `node_modules` u slojeve slike
 
 > Rezultat: **0 CRITICAL, 0 HIGH** u finalnim slikama (uz `--ignore-unfixed`).
-> Put od 24 nalaza do nule dokumentiran je u [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) §2.
+> Put od 24 nalaza do nule dokumentiran je u [`docs/security/image-scan-report.md`](docs/security/image-scan-report.md) §2,
+> a **neovisno je potvrđen** ručnim skeniranjem na CentOS Stream 9 (Trivy 0.74.0) — §3.
 
 **Izvođenje (Compose)**
 - `read_only: true` + `tmpfs /tmp`, `cap_drop: [ALL]`, `no-new-privileges:true`
